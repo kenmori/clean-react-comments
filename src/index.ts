@@ -11,6 +11,10 @@ interface RemoveCommentsOptions {
   removeTagJSXComments: boolean;
 }
 
+const defaultExcludes = ["node_modules", "dist"];
+
+const ANNOTATION_KEYWORDS = ["TODO", "FIXME", "HACK", "XXX", "REVIEW", "OPTIMIZE", "CHANGED", "NOTE", "WARNING"];
+
 export const removeComments = (directory: string, options: RemoveCommentsOptions) => {
   if (!fs.existsSync(directory)) return;
 
@@ -19,27 +23,33 @@ export const removeComments = (directory: string, options: RemoveCommentsOptions
   files.forEach((file: string) => {
     const filePath = path.join(directory, file);
 
+      // `exclude` オプションに該当するファイルは処理しない
+      const excludes = options.exclude ? [...defaultExcludes, ...options.exclude] : defaultExcludes;
+      if (excludes.some((ex) => filePath.includes(ex))) {
+        return;
+      }
+
     if (fs.statSync(filePath).isDirectory()) {
       removeComments(filePath, options);
     } else if (file.endsWith(".ts") || file.endsWith(".tsx")) {
       let content = fs.readFileSync(filePath, "utf8");
 
-      // JSX の `{/* コメント */}` を削除（中に文字がある場合は保持）
+      // JSX の `{/* コメント */}` を削除（オプションが有効な場合のみ）
       if (options.removeAllJSXComments) {
-        content = content.replace(/{\/\*\s*.*?\s*\*\/}/g, ""); // JSXコメント全削除
+        content = content.replace(/{\/\*.*?\*\/}/gs, "");
       } else if (options.removeTagJSXComments) {
-        content = content.replace(/{\/\*\s*<.*?>.*?\*\/}/g, ""); // タグが最初のJSXコメント削除
+        content = content.replace(/{\/\*\s*<.*?>.*?\*\/}/gs, "");
       }
 
-      // JSDoc コメントの削除（オプションが true の場合は保持）
+      // JSDoc コメントの削除（オプションが false の場合のみ削除）
       if (!options.keepJSDoc) {
-        content = content.replace(/\/\*\*[\s\S]*?\*\//g, "");
+        content = content.replace(/\/\*\*[^*][\s\S]*?\*\//g, "");
       }
 
-      // `onlyCodeComments` オプションが true の場合、JSXコメントは削除せず通常コメントのみ削除
-      if (options.onlyCodeComments) {
-        content = content.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, "");
-      }
+      // 通常のコメント（`//` や `/* */`）の削除
+      content = content.replace(/\/\/(?!\s*({{ANNOTATIONS}})).*/g, "").replace(/\/\*[^*][\s\S]*?\*\//g, "");
+      const annotationRegex = new RegExp(`\\/\\/\\s*(${ANNOTATION_KEYWORDS.join("|")})(?!\\S)`, "g");
+      content = content.replace(annotationRegex, "// $1");
 
       // `exclude` オプションに該当するファイルは処理しない
       if (options.exclude && options.exclude.some((ex) => filePath.includes(ex))) {
@@ -47,7 +57,7 @@ export const removeComments = (directory: string, options: RemoveCommentsOptions
       }
 
       // 空白行の削除
-      content = content.replace(/^\s*[\r\n]/gm, "").trim();
+      content = content.replace(/^(?:\s*\n)+/gm, "").trim();
 
       fs.writeFileSync(filePath, content, "utf8");
     }
