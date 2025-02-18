@@ -15,7 +15,7 @@
 ## Installation
 
 ```sh
-npm install -g clean-react-comments
+npm install -g @kenmori/clean-react-comments
 ```
 
 ## Usage
